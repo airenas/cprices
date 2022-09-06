@@ -1,0 +1,2 @@
+deploy/local/.env
+deploy/local/postgresql/init.sql
