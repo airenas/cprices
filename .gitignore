@@ -1,2 +1,4 @@
 deploy/local/.env
 deploy/local/postgresql/init.sql
+cprices/target/
+.vscode/launch.json
