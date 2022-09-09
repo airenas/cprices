@@ -10,7 +10,7 @@ build/local:
 .PHONY: build/local
 ###############################################################################
 test/unit:
-	RUST_LOG=DEBUG cargo test
+	RUST_LOG=DEBUG cargo test --no-fail-fast
 .PHONY: test/unit		
 test/lint:
 	cargo clippy --all-targets --all-features -- -D warnings

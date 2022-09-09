@@ -1,14 +1,11 @@
 mod binance;
 
-use chrono::Duration;
-use chrono::Utc;
 use clap::App;
 use clap::Arg;
 use cprices::run;
 use cprices::WorkingData;
 use reqwest::Error;
 use std::process;
-use tokio::signal;
 
 use binance::Binance;
 use cprices::Config;
@@ -46,25 +43,16 @@ async fn main() -> Result<(), Error> {
     log::info!("Pair     {}", config.pair);
     log::info!("Interval {}", config.interval);
 
-    let loader = Binance::new();
+    let loader = Binance::new().unwrap();
     let w_data = WorkingData {
         loader: Box::new(loader),
-        config: config,
+        config,
     };
 
     if let Err(e) = run(&w_data).await {
         log::error!("Problem parsing arguments: {e}");
         process::exit(1);
     }
-    // let resp = reqwest::get("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&startTime=1403367258000&limit=10")
-    //     .await?
-    //     .json::<serde_json::Value>()
-    //     .await?;
-    // for r in resp.as_array() {
-    //     for r1 in r {
-    //         println!("arr {:#?}", r1);
-    //     }
-    // }
     // let now = Utc::now();
     // println!("{}", now);
 
@@ -84,6 +72,6 @@ async fn main() -> Result<(), Error> {
     //         // we also shut down in case of error
     //     }
     // }
-    // log::info!("Bye");
+    log::info!("Bye");
     Ok(())
 }

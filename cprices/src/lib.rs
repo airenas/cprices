@@ -50,6 +50,7 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
             0,
         )
         .await?;
+    klines.iter().for_each(|f| log::info!("{}", f.to_str()));
 
     Ok(())
 }
