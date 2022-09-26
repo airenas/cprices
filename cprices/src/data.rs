@@ -33,6 +33,13 @@ pub trait Loader {
     ) -> Result<Vec<KLine>, Box<dyn Error>>;
 }
 
+#[async_trait]
+pub trait DBSaver {
+    async fn live(&self) -> Result<String, Box<dyn Error>>;
+    async fn get_last_time(&self, pair: &str) -> Result<i64, Box<dyn Error>>;
+    async fn save(&self, data: &KLine) -> Result<bool, Box<dyn Error>>;
+}
+
 #[cfg(test)]
 mod tests {
     use crate::data::KLine;

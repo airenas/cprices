@@ -1,4 +1,5 @@
 mod binance;
+mod postgresql;
 
 use clap::App;
 use clap::Arg;
@@ -9,6 +10,7 @@ use std::process;
 
 use binance::Binance;
 use cprices::Config;
+use postgresql::PostgresClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -33,6 +35,14 @@ async fn main() -> Result<(), Error> {
                 .help("KLine interval, e.g. : 15m")
                 .takes_value(true),
         )
+        .arg(
+            Arg::new("db_url")
+                .short('u')
+                .long("db-url")
+                .value_name("URL")
+                .help("TimescaleDb URL e.g.: postgres://postgres:pass@localhost/crypto")
+                .takes_value(true),
+        )
         .get_matches();
     log::info!("Starting Crypto importer");
 
@@ -44,9 +54,14 @@ async fn main() -> Result<(), Error> {
     log::info!("Interval {}", config.interval);
 
     let loader = Binance::new().unwrap();
+    let db_saver = PostgresClient::new(&config.db_url).unwrap_or_else(|err| {
+        log::error!("postgres client init: {err}");
+        process::exit(1)
+    });
     let w_data = WorkingData {
         loader: Box::new(loader),
         config,
+        saver: Box::new(db_saver),
     };
 
     if let Err(e) = run(&w_data).await {
