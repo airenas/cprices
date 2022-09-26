@@ -66,7 +66,12 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
         }
     };
 
-    while (chrono::offset::Utc::now() - chrono::Duration::minutes(15)) > last_time {
+    let dur = chrono::Duration::from_std(
+        duration_str::parse(&w_data.config.interval)
+            .map_err(|e| format!("duartion parse: {}", e))?,
+    )
+    .map_err(|e| format!("duartion parse: {}", e))?;
+    while (Utc::now() - dur) > last_time {
         last_time = import(w_data, last_time).await?;
     }
     log::info!("import cycle ended");
