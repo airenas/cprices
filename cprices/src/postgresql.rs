@@ -82,7 +82,7 @@ impl DBSaver for PostgresClient {
         let stmt = client
             .prepare_cached("INSERT INTO crypto_prices (time, opening_price, highest_price, lowest_price, closing_price, volume_crypto, currency_pair)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)").await?;
-        client
+        match client
             .execute(
                 &stmt,
                 &[
@@ -95,7 +95,20 @@ impl DBSaver for PostgresClient {
                     &kline.pair,
                 ],
             )
-            .await?;
+            .await
+        {
+            Ok(ok) => Ok(ok),
+            Err(err) => {
+                if match err.as_db_error() {
+                    Some(err) => err.code().code() == "23505",
+                    None => false,
+                } {
+                    log::warn!("postgres err: {err}");
+                    return Ok(true);
+                }
+                Err(err)
+            }
+        }?;
         Ok(true)
     }
 }
