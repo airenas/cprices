@@ -14,7 +14,7 @@ pub struct Config {
 impl Config {
     pub fn build(args: &ArgMatches) -> Result<Config, &'static str> {
         let pair = args.value_of("pair").unwrap_or("BTCUSDT");
-        let interval = args.value_of("interval").unwrap_or("15m");
+        let interval = args.value_of("interval").unwrap_or("1h");
         let db_url = args.value_of("db_url").expect("no db_url provided");
         Ok(Config {
             pair: pair.to_string(),
@@ -69,7 +69,7 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
     while (chrono::offset::Utc::now() - chrono::Duration::minutes(15)) > last_time {
         last_time = import(w_data, last_time).await?;
     }
-    log::info!("cycle ended");
+    log::info!("import cycle ended");
     Ok(())
 }
 

@@ -1,6 +1,8 @@
 use async_trait::async_trait;
-use chrono::{Utc, DateTime};
+use chrono::{DateTime, Utc};
 use cprices::data::{KLine, Loader};
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde::de::{self, Deserializer, Unexpected, Visitor};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -9,7 +11,7 @@ use std::time::Duration;
 #[derive(Debug)]
 pub struct Binance {
     url: String,
-    client: reqwest::Client,
+    client: ClientWithMiddleware,
 }
 
 impl Binance {
@@ -18,6 +20,11 @@ impl Binance {
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15))
             .build()?;
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
+        let client = ClientBuilder::new(client)
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build();
+
         Ok(Binance {
             url: "https://api.binance.com".to_string(),
             client,
@@ -42,7 +49,12 @@ impl Loader for Binance {
     ) -> std::result::Result<Vec<KLine>, Box<dyn Error>> {
         let url = format!(
             "{}/{}?symbol={}&interval={}&startTime={}&limit={}",
-            self.url, "api/v3/klines", pair, interval, from.timestamp_millis(), 100
+            self.url,
+            "api/v3/klines",
+            pair,
+            interval,
+            from.timestamp_millis(),
+            100
         );
         log::debug!("Calling... {} ", url);
         let resp = self

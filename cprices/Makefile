@@ -1,8 +1,9 @@
 -include Makefile.options
 POSTGRESQL_URL=postgres://editor:$(EDITOR_PASS)@localhost:5432/crypto?sslmode=disable
+pair?=BTCUSDT
 ###############################################################################
 run:
-	RUST_LOG=DEBUG cargo run --bin importer -- --db-url $(POSTGRESQL_URL)
+	RUST_LOG=DEBUG cargo run --bin importer -- --db-url $(POSTGRESQL_URL) --pair $(pair)
 .PHONY: run
 ###############################################################################
 build/local: 
