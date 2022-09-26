@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
@@ -21,6 +22,14 @@ impl KLine {
             self.pair, self.open_time, self.open_price
         )
     }
+    pub fn open_time(&self) -> DateTime<Utc> {
+        Utc.timestamp(
+            self.open_time / 1000,
+            ((self.open_time % 1000) * 1000000)
+                .try_into()
+                .unwrap(),
+        )
+    }
 }
 #[async_trait]
 pub trait Loader {
@@ -29,14 +38,14 @@ pub trait Loader {
         &self,
         pair: &str,
         interval: &str,
-        from: i64,
+        from: DateTime<Utc>,
     ) -> Result<Vec<KLine>, Box<dyn Error>>;
 }
 
 #[async_trait]
 pub trait DBSaver {
     async fn live(&self) -> Result<String, Box<dyn Error>>;
-    async fn get_last_time(&self, pair: &str) -> Result<i64, Box<dyn Error>>;
+    async fn get_last_time(&self, pair: &str) -> Result<DateTime<Utc>, Box<dyn Error>>;
     async fn save(&self, data: &KLine) -> Result<bool, Box<dyn Error>>;
 }
 

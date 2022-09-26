@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, TimeZone, Utc};
 use cprices::data::{DBSaver, KLine};
 use deadpool_postgres::{tokio_postgres::NoTls, Pool};
 use reqwest::Url;
@@ -46,17 +47,56 @@ impl PostgresClient {
 #[async_trait]
 impl DBSaver for PostgresClient {
     async fn live(&self) -> std::result::Result<String, Box<dyn Error>> {
-        let client = self.pool.get().await.map_err(|e| format!("connect db: {}", e))?;
+        let client = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| format!("connect db: {}", e))?;
         let stmt = client.prepare_cached("SELECT 1").await?;
         let rows = client.query(&stmt, &[]).await?;
         let value: i32 = rows[0].get(0);
         Ok(format!("{}", value))
     }
-    async fn get_last_time(&self, _: &str) -> Result<i64, Box<dyn Error>> {
-        todo!()
+    async fn get_last_time(&self, pair: &str) -> Result<DateTime<Utc>, Box<dyn Error>> {
+        let client = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| format!("connect db: {}", e))?;
+        let stmt = client
+            .prepare_cached("SELECT MAX(time) from crypto_prices WHERE currency_pair=$1")
+            .await?;
+        let rows = client.query(&stmt, &[&pair]).await?;
+        let value: chrono::DateTime<chrono::offset::Utc> = match rows[0].try_get(0) {
+            Ok(ok) => ok,
+            Err(_) => Utc.timestamp(0, 0),
+        };
+        Ok(value)
     }
-    async fn save(&self, _: &KLine) -> Result<bool, Box<dyn Error>> {
-        todo!()
+    async fn save(&self, kline: &KLine) -> Result<bool, Box<dyn Error>> {
+        let client = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| format!("connect db: {}", e))?;
+        let stmt = client
+            .prepare_cached("INSERT INTO crypto_prices (time, opening_price, highest_price, lowest_price, closing_price, volume_crypto, currency_pair)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)").await?;
+        client
+            .execute(
+                &stmt,
+                &[
+                    &kline.open_time(),
+                    &kline.open_price,
+                    &kline.high_price,
+                    &kline.low_price,
+                    &kline.close_price,
+                    &kline.volume,
+                    &kline.pair,
+                ],
+            )
+            .await?;
+        Ok(true)
     }
 }
 

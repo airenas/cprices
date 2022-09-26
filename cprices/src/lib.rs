@@ -52,6 +52,18 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
         }
     }
 
+    log::info!("Get last value in DB");
+    let last_time = match w_data.saver.get_last_time(&w_data.config.pair).await {
+        Ok(v) => {
+            log::info!("Got last time: {}", v);
+            v
+        }
+        Err(err) => {
+            log::error!("{}", err);
+            return Err(err);
+        }
+    };
+
     log::info!(
         "Getting klines {} for {}",
         w_data.config.interval,
@@ -63,10 +75,17 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
         .retrieve(
             w_data.config.pair.as_str(),
             w_data.config.interval.as_str(),
-            0,
+            last_time,
         )
         .await?;
-    klines.iter().for_each(|f| log::info!("{}", f.to_str()));
+    klines.iter().for_each(|f| {
+        log::info!("{}", f.to_str());
+        // w_data.saver.save(f).await;
+    });
+
+    for line in klines {
+        w_data.saver.save(&line).await?;
+    }
 
     Ok(())
 }

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{Utc, DateTime};
 use cprices::data::{KLine, Loader};
 use serde::de::{self, Deserializer, Unexpected, Visitor};
 use serde::{Deserialize, Serialize};
@@ -37,11 +38,11 @@ impl Loader for Binance {
         &self,
         pair: &str,
         interval: &str,
-        from: i64,
+        from: DateTime<Utc>,
     ) -> std::result::Result<Vec<KLine>, Box<dyn Error>> {
         let url = format!(
             "{}/{}?symbol={}&interval={}&startTime={}&limit={}",
-            self.url, "api/v3/klines", pair, interval, from, 10
+            self.url, "api/v3/klines", pair, interval, from.timestamp_millis(), 10
         );
         log::debug!("Calling... {} ", url);
         let resp = self
