@@ -11,7 +11,6 @@ CREATE TABLE "crypto_prices"(
     lowest_price    DOUBLE PRECISION,
     closing_price   DOUBLE PRECISION,
     volume_crypto   DOUBLE PRECISION,
-    volume_btc      DOUBLE PRECISION,
     currency_pair   VARCHAR (10),
     PRIMARY KEY (time, currency_pair)
 );

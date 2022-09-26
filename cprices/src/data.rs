@@ -25,9 +25,7 @@ impl KLine {
     pub fn open_time(&self) -> DateTime<Utc> {
         Utc.timestamp(
             self.open_time / 1000,
-            ((self.open_time % 1000) * 1000000)
-                .try_into()
-                .unwrap(),
+            ((self.open_time % 1000) * 1000000).try_into().unwrap(),
         )
     }
 }
@@ -47,6 +45,11 @@ pub trait DBSaver {
     async fn live(&self) -> Result<String, Box<dyn Error>>;
     async fn get_last_time(&self, pair: &str) -> Result<DateTime<Utc>, Box<dyn Error>>;
     async fn save(&self, data: &KLine) -> Result<bool, Box<dyn Error>>;
+}
+
+#[async_trait]
+pub trait Limiter {
+    async fn wait(&self) -> Result<bool, Box<dyn Error>>;
 }
 
 #[cfg(test)]

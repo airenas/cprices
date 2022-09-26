@@ -1,7 +1,8 @@
 pub mod data;
 
+use chrono::{DateTime, Utc};
 use clap::ArgMatches;
-use data::{DBSaver, Loader};
+use data::{DBSaver, Limiter, Loader};
 use std::error::Error;
 
 pub struct Config {
@@ -27,6 +28,7 @@ pub struct WorkingData {
     pub config: Config,
     pub loader: Box<dyn Loader>,
     pub saver: Box<dyn DBSaver>,
+    pub limiter: Box<dyn Limiter>,
 }
 
 pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
@@ -53,7 +55,7 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
     }
 
     log::info!("Get last value in DB");
-    let last_time = match w_data.saver.get_last_time(&w_data.config.pair).await {
+    let mut last_time = match w_data.saver.get_last_time(&w_data.config.pair).await {
         Ok(v) => {
             log::info!("Got last time: {}", v);
             v
@@ -64,10 +66,25 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
         }
     };
 
+    while (chrono::offset::Utc::now() - chrono::Duration::minutes(15)) > last_time {
+        last_time = import(w_data, last_time).await?;
+    }
+    log::info!("cycle ended");
+    Ok(())
+}
+
+async fn import(
+    w_data: &WorkingData,
+    from: DateTime<Utc>,
+) -> Result<DateTime<Utc>, Box<dyn Error>> {
+    log::info!("wait for import");
+    w_data.limiter.wait().await?;
+    log::info!("lets go");
     log::info!(
-        "Getting klines {} for {}",
+        "Getting klines {} for {} from {}",
         w_data.config.interval,
-        w_data.config.pair
+        w_data.config.pair,
+        from
     );
 
     let klines = w_data
@@ -75,7 +92,7 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
         .retrieve(
             w_data.config.pair.as_str(),
             w_data.config.interval.as_str(),
-            last_time,
+            from,
         )
         .await?;
     klines.iter().for_each(|f| {
@@ -83,9 +100,12 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
         // w_data.saver.save(f).await;
     });
 
+    let mut res = from;
     for line in klines {
         w_data.saver.save(&line).await?;
+        if res < line.open_time() {
+            res = line.open_time();
+        }
     }
-
-    Ok(())
+    Ok(res)
 }

@@ -42,7 +42,7 @@ impl Loader for Binance {
     ) -> std::result::Result<Vec<KLine>, Box<dyn Error>> {
         let url = format!(
             "{}/{}?symbol={}&interval={}&startTime={}&limit={}",
-            self.url, "api/v3/klines", pair, interval, from.timestamp_millis(), 10
+            self.url, "api/v3/klines", pair, interval, from.timestamp_millis(), 100
         );
         log::debug!("Calling... {} ", url);
         let resp = self

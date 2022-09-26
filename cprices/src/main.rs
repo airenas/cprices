@@ -1,4 +1,5 @@
 mod binance;
+mod limiter;
 mod postgresql;
 
 use clap::App;
@@ -11,6 +12,8 @@ use std::process;
 use binance::Binance;
 use cprices::Config;
 use postgresql::PostgresClient;
+
+use crate::limiter::RateLimiter;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -58,26 +61,18 @@ async fn main() -> Result<(), Error> {
         log::error!("postgres client init: {err}");
         process::exit(1)
     });
+    let limiter = RateLimiter::new().unwrap();
     let w_data = WorkingData {
         loader: Box::new(loader),
         config,
         saver: Box::new(db_saver),
+        limiter: Box::new(limiter),
     };
 
     if let Err(e) = run(&w_data).await {
         log::error!("Problem parsing arguments: {e}");
         process::exit(1);
     }
-    // let now = Utc::now();
-    // println!("{}", now);
-
-    // let time = now.checked_add_signed(Duration::days(-3000)).unwrap();
-    // println!("{}", time);
-
-    // let timestamp: i64 = time.timestamp() * 1000;
-
-    // println!("Current timestamp is {}", timestamp);
-
     // match signal::ctrl_c().await {
     //     Ok(()) => {
     //         log::debug!("Exit event");
