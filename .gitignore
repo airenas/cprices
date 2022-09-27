@@ -3,3 +3,4 @@ deploy/local/postgresql/init.sql
 cprices/target/
 .vscode/launch.json
 cprices/Makefile.options
+deploy/local/data
