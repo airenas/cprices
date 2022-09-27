@@ -14,6 +14,7 @@ use cprices::Config;
 use postgresql::PostgresClient;
 
 use crate::limiter::RateLimiter;
+use crate::postgresql::PostgresClientRetryable;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -61,6 +62,7 @@ async fn main() -> Result<(), Error> {
         log::error!("postgres client init: {err}");
         process::exit(1)
     });
+    let db_saver = PostgresClientRetryable::new(db_saver);
     let limiter = RateLimiter::new().unwrap();
     let w_data = WorkingData {
         loader: Box::new(loader),

@@ -1,9 +1,11 @@
 use async_trait::async_trait;
+use backoff::future::retry;
+use backoff::ExponentialBackoff;
 use chrono::{DateTime, TimeZone, Utc};
 use cprices::data::{DBSaver, KLine};
 use deadpool_postgres::{tokio_postgres::NoTls, Pool};
 use reqwest::Url;
-use std::{error::Error, path::Path};
+use std::{error::Error, path::Path, time::Duration};
 
 #[derive(serde::Deserialize)]
 pub struct DbConfig {
@@ -47,6 +49,7 @@ impl PostgresClient {
 #[async_trait]
 impl DBSaver for PostgresClient {
     async fn live(&self) -> std::result::Result<String, Box<dyn Error>> {
+        log::debug!("invoke live");
         let client = self
             .pool
             .get()
@@ -57,6 +60,7 @@ impl DBSaver for PostgresClient {
         let value: i32 = rows[0].get(0);
         Ok(format!("{}", value))
     }
+
     async fn get_last_time(&self, pair: &str) -> Result<DateTime<Utc>, Box<dyn Error>> {
         let client = self
             .pool
@@ -73,6 +77,7 @@ impl DBSaver for PostgresClient {
         };
         Ok(value)
     }
+
     async fn save(&self, kline: &KLine) -> Result<bool, Box<dyn Error>> {
         let client = self
             .pool
@@ -110,6 +115,49 @@ impl DBSaver for PostgresClient {
             }
         }?;
         Ok(true)
+    }
+}
+
+#[derive()]
+pub struct PostgresClientRetryable {
+    client: PostgresClient,
+}
+
+impl PostgresClientRetryable {
+    pub fn new(client: PostgresClient) -> PostgresClientRetryable {
+        PostgresClientRetryable { client }
+    }
+    fn get_backoff() -> ExponentialBackoff {
+        backoff::ExponentialBackoffBuilder::default()
+            .with_max_elapsed_time(Some(Duration::from_secs(15)))
+            .build()
+    }
+}
+
+#[async_trait]
+impl DBSaver for PostgresClientRetryable {
+    async fn live(&self) -> std::result::Result<String, Box<dyn Error>> {
+        retry(
+            backoff::ExponentialBackoffBuilder::default()
+                .with_max_elapsed_time(Some(Duration::from_secs(3)))
+                .build(),
+            || async { Ok(self.client.live().await?) },
+        )
+        .await
+    }
+
+    async fn get_last_time(&self, pair: &str) -> Result<DateTime<Utc>, Box<dyn Error>> {
+        retry(PostgresClientRetryable::get_backoff(), || async {
+            Ok(self.client.get_last_time(pair).await?)
+        })
+        .await
+    }
+
+    async fn save(&self, kline: &KLine) -> Result<bool, Box<dyn Error>> {
+        retry(PostgresClientRetryable::get_backoff(), || async {
+            Ok(self.client.save(kline).await?)
+        })
+        .await
     }
 }
 

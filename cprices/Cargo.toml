@@ -19,6 +19,7 @@ governor = "0.5.0"
 reqwest-middleware = "0.1.6"
 reqwest-retry = "0.1.5"
 duration-str = "0.4.0"
+backoff = { version="0.4.0", features = ["tokio"] }
 
 [dev-dependencies]
 approx = "0.5.1"
