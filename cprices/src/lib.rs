@@ -3,10 +3,11 @@ pub mod data;
 use chrono::{DateTime, Utc};
 use clap::ArgMatches;
 use data::{DBSaver, Limiter, Loader};
-use std::error::Error;
+use tokio::sync::Mutex;
+use std::{error::Error};
 
 pub struct Config {
-    pub pair: String,
+    pub pairs: Vec<String>,
     pub interval: String,
     pub db_url: String,
 }
@@ -16,22 +17,27 @@ impl Config {
         let pair = args.value_of("pair").unwrap_or("BTCUSDT");
         let interval = args.value_of("interval").unwrap_or("1h");
         let db_url = args.value_of("db_url").expect("no db_url provided");
+        let pairs = pair.split(",").map(String::from).collect();
         Ok(Config {
-            pair: pair.to_string(),
+            pairs,
             interval: interval.to_string(),
             db_url: db_url.to_string(),
         })
     }
 }
 
+type LimiterM = std::sync::Arc<Mutex<Box<dyn Limiter>>>;
+
 pub struct WorkingData {
-    pub config: Config,
+    pub pair: String,
+    pub interval: String,
     pub loader: Box<dyn Loader>,
     pub saver: Box<dyn DBSaver>,
-    pub limiter: Box<dyn Limiter>,
+    pub limiter: LimiterM,
 }
 
-pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
+pub async fn run(w_data: WorkingData) -> Result<(), Box<dyn Error>> {
+    log::info!("Importing: {}", w_data.pair);
     log::info!("Test Binance is live");
     match w_data.loader.live().await {
         Ok(_) => {
@@ -55,7 +61,7 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
     }
 
     log::info!("Get last value in DB");
-    let mut last_time = match w_data.saver.get_last_time(&w_data.config.pair).await {
+    let mut last_time = match w_data.saver.get_last_time(&w_data.pair).await {
         Ok(v) => {
             log::info!("Got last time: {}", v);
             v
@@ -67,12 +73,11 @@ pub async fn run(w_data: &WorkingData) -> Result<(), Box<dyn Error>> {
     };
 
     let dur = chrono::Duration::from_std(
-        duration_str::parse(&w_data.config.interval)
-            .map_err(|e| format!("duartion parse: {}", e))?,
+        duration_str::parse(&w_data.interval).map_err(|e| format!("duartion parse: {}", e))?,
     )
     .map_err(|e| format!("duartion parse: {}", e))?;
     while (Utc::now() - dur) > last_time {
-        last_time = import(w_data, last_time).await?;
+        last_time = import(&w_data, last_time).await?;
     }
     log::info!("import cycle ended");
     Ok(())
@@ -82,26 +87,25 @@ async fn import(
     w_data: &WorkingData,
     from: DateTime<Utc>,
 ) -> Result<DateTime<Utc>, Box<dyn Error>> {
-    log::info!("wait for import");
-    w_data.limiter.wait().await?;
-    log::info!("lets go");
+    {
+        log::info!("wait for import");
+        let wait = w_data.limiter.lock().await;
+        wait.wait().await?;
+        log::info!("let's go");
+    }
     log::info!(
         "Getting klines {} for {} from {}",
-        w_data.config.interval,
-        w_data.config.pair,
+        w_data.interval,
+        w_data.pair,
         from
     );
 
     let klines = w_data
         .loader
-        .retrieve(
-            w_data.config.pair.as_str(),
-            w_data.config.interval.as_str(),
-            from,
-        )
+        .retrieve(w_data.pair.as_str(), w_data.interval.as_str(), from)
         .await?;
     klines.iter().for_each(|f| {
-        log::info!("{}", f.to_str());
+        log::trace!("{}", f.to_str());
         // w_data.saver.save(f).await;
     });
 

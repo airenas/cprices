@@ -230,6 +230,7 @@ dependencies = [
  "deadpool-postgres",
  "duration-str",
  "env_logger",
+ "futures",
  "governor",
  "log",
  "reqwest",
