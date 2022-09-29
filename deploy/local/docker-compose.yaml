@@ -15,6 +15,7 @@ services:
     image: timescale/timescaledb:latest-pg14
     command: postgres -c shared_preload_libraries=timescaledb
     logging: *default-logging
+    restart: unless-stopped
     networks:
       - cprices
     ports:
@@ -52,3 +53,16 @@ services:
       - GF_AUTH_GITHUB_AUTH_URL=https://github.com/login/oauth/authorize
       - GF_AUTH_GITHUB_TOKEN_URL=https://github.com/login/oauth/access_token
       - GF_AUTH_GITHUB_API_URL=https://api.github.com/user
+
+  importer:
+    image: airenas/cprice-importer:${IMPORTER_VERSION}
+    container_name: cprice-importer
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - cprices
+    environment:
+      - RUST_LOG=INFO
+      - INTERVAL=1h
+      - PAIRS=BTCUSDT,ETHUSDT
+      - DB_URL=postgres://editor:${EDITOR_PASS}@timescaledb:5432/crypto?sslmode=disable
