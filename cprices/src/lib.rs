@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use clap::ArgMatches;
 use data::{DBSaver, KLine, Limiter, Loader};
 use std::error::Error;
+use tokio::sync::broadcast;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
     Mutex,
@@ -41,7 +42,7 @@ pub struct WorkingData {
     pub sender: Sender<KLine>,
 }
 
-pub async fn run(w_data: WorkingData) -> ResultM {
+pub async fn run(w_data: WorkingData, close_sender: broadcast::Sender<i32>) -> ResultM {
     log::info!("Importing: {}, from {}", w_data.pair, w_data.start_from);
     log::info!("Test Binance is live");
     match w_data.loader.live().await {
@@ -58,18 +59,38 @@ pub async fn run(w_data: WorkingData) -> ResultM {
         duration_str::parse(&w_data.interval).map_err(|e| format!("duration  parse: {}", e))?,
     )
     .map_err(|e| format!("duration parse: {}", e))?;
+
+    let mut close_ch = close_sender.subscribe();
     loop {
+        log::info!("loop");
+        match close_ch.try_recv() {
+            Ok(_) => break,
+            Err(err) => match err {
+                broadcast::error::TryRecvError::Empty => {}
+                broadcast::error::TryRecvError::Closed => break,
+                broadcast::error::TryRecvError::Lagged(_) => break,
+            },
+        }
+        log::info!("after check");
+        let max_dur = chrono::Duration::seconds(5);
         let mut td = last_time - (Utc::now() - dur);
         if td < chrono::Duration::zero() {
             last_time = import(&w_data, last_time).await?;
         } else {
-            if td > chrono::Duration::minutes(15) {
-                td = chrono::Duration::minutes(15);
+            if td > max_dur {
+                td = max_dur;
             }
             log::info!("sleep till {}", Utc::now() + td);
-            tokio::time::sleep(td.to_std()?).await;
+            let sleep = tokio::time::sleep(td.to_std()?);
+            tokio::pin!(sleep);
+            tokio::select! {
+                _ = &mut sleep => {},
+                _ = close_ch.recv() => { break; }
+            }
         }
     }
+    log::info!("exit import loop for {}", w_data.pair);
+    Ok(())
 }
 
 pub async fn get_last_time(
@@ -126,14 +147,16 @@ pub async fn saver_start(
     log::info!("start db saver loop");
     loop {
         let line = receiver.recv().await;
-        log::debug!("got line");
+        log::trace!("got line");
         match line {
             Some(line) => db
                 .save(&line)
                 .await
                 .map(|_v| ())
                 .map_err(|err| format!("save err: {}", err))?,
-            None => (),
+            None => break,
         }
     }
+    log::info!("exit save loop");
+    Ok(())
 }

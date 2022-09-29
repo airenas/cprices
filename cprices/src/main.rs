@@ -12,6 +12,7 @@ use reqwest::Error;
 use std::process;
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 use binance::Binance;
@@ -22,6 +23,8 @@ use crate::limiter::RateLimiter;
 use crate::postgresql::PostgresClientRetryable;
 use cprices::data::DBSaver;
 use futures::future::join_all;
+use tokio::signal;
+use tokio::sync::broadcast;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -80,47 +83,54 @@ async fn main() -> Result<(), Error> {
     let limiter = Arc::new(Mutex::new(boxed_limiter));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let (tx_close, _) = broadcast::channel(2);
+    let (tx_wait_exit, mut rx_wait_exit) = tokio::sync::mpsc::channel(1);
 
     for pair in config.pairs {
         let loader = Binance::new().unwrap();
 
         let interval = config.interval.clone();
         let int_limiter = limiter.clone();
-        let int_tx = tx.clone();
         let start_from = get_last_time(boxed_db_saver.as_ref(), &pair).await.unwrap();
         let w_data = WorkingData {
             loader: Box::new(loader),
             pair,
             interval,
             start_from,
-            sender: int_tx,
+            sender: tx.clone(),
             limiter: int_limiter,
         };
 
-        imports.push(run(w_data));
+        imports.push(run(w_data, tx_close.clone()));
     }
-    tokio::spawn(async move { start_saver_loop(boxed_db_saver, &mut rx).await });
+    let int_exit = tx_wait_exit.clone();
+    tokio::spawn(async move { start_saver_loop(boxed_db_saver, &mut rx, int_exit).await });
+
+    tokio::spawn(async move {
+        match signal::ctrl_c().await {
+            Ok(()) => {
+                log::debug!("Exit event");
+            }
+            Err(err) => {
+                log::error!("Unable to listen for shutdown signal: {}", err);
+            }
+        }
+        log::debug!("sending exit event");
+        tx_close.send(0).unwrap();
+    });
+
+    drop(tx_wait_exit);
+    drop(tx);
 
     join_all(imports).await.iter().for_each(|err| {
         if let Err(e) = err {
-            log::error!("Problem importing {e}");
+            log::error!("problem importing: {e}");
         }
     });
 
-    // if let Err(e) = run(&w_data).await {
-    //         log::error!("Problem importing arguments: {e}");
-    //         process::exit(1);
-    //     }
+    log::info!("wait jobs to finish");
+    let _ = rx_wait_exit.recv().await;
 
-    // match signal::ctrl_c().await {
-    //     Ok(()) => {
-    //         log::debug!("Exit event");
-    //     }
-    //     Err(err) => {
-    //         eprintln!("Unable to listen for shutdown signal: {}", err);
-    //         // we also shut down in case of error
-    //     }
-    // }
     log::info!("Bye");
     Ok(())
 }
@@ -128,6 +138,7 @@ async fn main() -> Result<(), Error> {
 async fn start_saver_loop(
     db_saver: Box<dyn DBSaver + Send + Sync>,
     receiver: &mut Receiver<KLine>,
+    _tx_exit: Sender<()>,
 ) -> Result<(), String> {
     log::info!("Test Postgres is live ...");
     db_saver.live().await.unwrap();
