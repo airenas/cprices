@@ -29,8 +29,11 @@ use clap::Command;
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     env_logger::init();
+    const CARGO_PKG_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
+
+
     let cmd = Command::new("importer")
-        .version("0.1")
+        .version(CARGO_PKG_VERSION.unwrap_or("dev"))
         .author("Airenas V.<airenass@gmail.com>")
         .about("Imports Binance crypto Klines to local timescaleDB")
         .arg(
@@ -61,6 +64,7 @@ async fn main() -> Result<(), Error> {
         )
         .get_matches();
     log::info!("Starting Crypto importer");
+    log::info!("Version: {}", CARGO_PKG_VERSION.unwrap_or("dev"));
 
     let config = Config::build(&cmd).unwrap_or_else(|err| {
         log::error!("Problem parsing arguments: {err}");
