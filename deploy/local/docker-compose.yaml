@@ -64,5 +64,5 @@ services:
     environment:
       - RUST_LOG=INFO
       - INTERVAL=1h
-      - PAIRS=BTCUSDT,ETHUSDT
+      - PAIRS=BTCUSDT,ETHUSDT,FILUSDT,DOGEUSDT
       - DB_URL=postgres://editor:${EDITOR_PASS}@timescaledb:5432/crypto?sslmode=disable

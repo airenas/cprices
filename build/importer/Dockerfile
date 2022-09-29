@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 #########################################################################################
 FROM debian:buster-slim as runner
 
-RUN apt-get update && apt-get -y install openssl
+RUN apt-get update && apt-get -y install openssl ca-certificates
 
 
 ARG BUILD_VERSION=0.1
