@@ -58,20 +58,22 @@ pub async fn run(w_data: WorkingData) -> ResultM {
         duration_str::parse(&w_data.interval).map_err(|e| format!("duration  parse: {}", e))?,
     )
     .map_err(|e| format!("duration parse: {}", e))?;
-    loop{
-        let td = last_time - (Utc::now() - dur);
+    loop {
+        let mut td = last_time - (Utc::now() - dur);
         if td < chrono::Duration::zero() {
             last_time = import(&w_data, last_time).await?;
         } else {
-            log::info!("sleep {}", td.to_string());
+            if td > chrono::Duration::minutes(15) {
+                td = chrono::Duration::minutes(15);
+            }
+            log::info!("sleep till {}", Utc::now() + td);
             tokio::time::sleep(td.to_std()?).await;
         }
     }
-    Ok(())
 }
 
 pub async fn get_last_time(
-    db: &Box<dyn DBSaver>,
+    db: &Box<dyn DBSaver + Send + Sync>,
     pair: &str,
 ) -> Result<DateTime<Utc>, Box<dyn Error>> {
     log::info!("Get last value in DB for {}", pair);
@@ -126,8 +128,12 @@ pub async fn saver_start(
         let line = receiver.recv().await;
         log::debug!("got line");
         match line {
-            Some(line) => db.save(&line).await.map(|_v| ()).map_err(|err| format!("save err: {}", err))?,
-            None => todo!(),
+            Some(line) => db
+                .save(&line)
+                .await
+                .map(|_v| ())
+                .map_err(|err| format!("save err: {}", err))?,
+            None => (),
         }
     }
 }

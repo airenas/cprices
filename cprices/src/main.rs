@@ -69,7 +69,7 @@ async fn main() -> Result<(), Error> {
         process::exit(1)
     });
     let db_saver = PostgresClientRetryable::new(db_saver);
-    let boxed_db_saver: Box<dyn DBSaver> = Box::new(db_saver);
+    let boxed_db_saver: Box<dyn DBSaver + Send + Sync> = Box::new(db_saver);
     log::info!("Test Postgres is live ...");
     boxed_db_saver.live().await.unwrap();
     log::info!("Postgresql OK");
@@ -99,8 +99,7 @@ async fn main() -> Result<(), Error> {
 
         imports.push(run(w_data));
     }
-    tokio::spawn(async move { start_saver_loop(&config.db_url, &mut rx).await });
-    // imports.push(saver_start(boxed_db_saver, &mut rx));
+    tokio::spawn(async move { start_saver_loop(boxed_db_saver, &mut rx).await });
 
     join_all(imports).await.iter().for_each(|err| {
         if let Err(e) = err {
@@ -126,19 +125,15 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn start_saver_loop(db_url: &str, receiver: &mut Receiver<KLine>) -> Result<(), String> {
-    log::info!("start saver loop");
-    let db_saver = PostgresClient::new(db_url).unwrap_or_else(|err| {
-        log::error!("postgres client init: {err}");
-        process::exit(1)
-    });
-    let db_saver = PostgresClientRetryable::new(db_saver);
-    let boxed_db_saver: Box<dyn DBSaver + Send + Sync> = Box::new(db_saver);
+async fn start_saver_loop(
+    db_saver: Box<dyn DBSaver + Send + Sync>,
+    receiver: &mut Receiver<KLine>,
+) -> Result<(), String> {
     log::info!("Test Postgres is live ...");
-    boxed_db_saver.live().await.unwrap();
+    db_saver.live().await.unwrap();
     log::info!("Postgresql OK");
 
-    saver_start(boxed_db_saver, receiver).await.unwrap();
+    saver_start(db_saver, receiver).await.unwrap();
 
     log::info!("exit loop");
     Ok(())
