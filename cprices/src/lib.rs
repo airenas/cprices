@@ -18,9 +18,13 @@ pub struct Config {
 
 impl Config {
     pub fn build(args: &ArgMatches) -> Result<Config, &'static str> {
-        let pair = args.value_of("pair").unwrap_or("BTCUSDT");
-        let interval = args.value_of("interval").unwrap_or("1h");
-        let db_url = args.value_of("db_url").expect("no db_url provided");
+        let pair = args.get_one::<String>("pair").expect("no pair param");
+        let interval = args
+            .get_one::<String>("interval")
+            .expect("no interval param");
+        let db_url = args
+            .get_one::<String>("db_url")
+            .expect("no db_url provided");
         let pairs = pair.split(',').map(String::from).collect();
         Ok(Config {
             pairs,

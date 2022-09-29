@@ -2,7 +2,6 @@ mod binance;
 mod limiter;
 mod postgresql;
 
-use clap::App;
 use clap::Arg;
 use cprices::data::KLine;
 use cprices::data::Limiter;
@@ -25,11 +24,12 @@ use cprices::data::DBSaver;
 use futures::future::join_all;
 use tokio::signal;
 use tokio::sync::broadcast;
+use clap::Command;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     env_logger::init();
-    let matches = App::new("importer")
+    let cmd = Command::new("importer")
         .version("0.1")
         .author("Airenas V.<airenass@gmail.com>")
         .about("Imports Binance crypto Klines to local timescaleDB")
@@ -39,7 +39,8 @@ async fn main() -> Result<(), Error> {
                 .long("pair")
                 .value_name("PAIR")
                 .help("Crypto pairs separated by comma, e.g. : BTCUSDT,ETHUSDT")
-                .takes_value(true),
+                .env("PAIRS")
+                .default_value("BTCUSDT")
         )
         .arg(
             Arg::new("interval")
@@ -47,20 +48,21 @@ async fn main() -> Result<(), Error> {
                 .long("interval")
                 .value_name("INTERVAL")
                 .help("KLine interval, e.g. : 15m")
-                .takes_value(true),
+                .env("INTERVAL")
+                .default_value("1h")
         )
         .arg(
             Arg::new("db_url")
                 .short('u')
                 .long("db-url")
                 .value_name("URL")
+                .env("DB_URL")
                 .help("TimescaleDb URL e.g.: postgres://postgres:pass@localhost/crypto")
-                .takes_value(true),
         )
         .get_matches();
     log::info!("Starting Crypto importer");
 
-    let config = Config::build(&matches).unwrap_or_else(|err| {
+    let config = Config::build(&cmd).unwrap_or_else(|err| {
         log::error!("Problem parsing arguments: {err}");
         process::exit(1)
     });
