@@ -73,7 +73,7 @@ pub async fn run(w_data: WorkingData) -> ResultM {
 }
 
 pub async fn get_last_time(
-    db: &Box<dyn DBSaver + Send + Sync>,
+    db: &'_ (dyn DBSaver + Send + Sync),
     pair: &str,
 ) -> Result<DateTime<Utc>, Box<dyn Error>> {
     log::info!("Get last value in DB for {}", pair);

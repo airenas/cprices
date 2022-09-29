@@ -87,7 +87,7 @@ async fn main() -> Result<(), Error> {
         let interval = config.interval.clone();
         let int_limiter = limiter.clone();
         let int_tx = tx.clone();
-        let start_from = get_last_time(&boxed_db_saver, &pair).await.unwrap();
+        let start_from = get_last_time(boxed_db_saver.as_ref(), &pair).await.unwrap();
         let w_data = WorkingData {
             loader: Box::new(loader),
             pair,
