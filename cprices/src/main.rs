@@ -20,17 +20,16 @@ use postgresql::PostgresClient;
 
 use crate::limiter::RateLimiter;
 use crate::postgresql::PostgresClientRetryable;
+use clap::Command;
 use cprices::data::DBSaver;
 use futures::future::join_all;
-use tokio::signal;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::broadcast;
-use clap::Command;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     env_logger::init();
     const CARGO_PKG_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
-
 
     let cmd = Command::new("importer")
         .version(CARGO_PKG_VERSION.unwrap_or("dev"))
@@ -43,7 +42,7 @@ async fn main() -> Result<(), Error> {
                 .value_name("PAIR")
                 .help("Crypto pairs separated by comma, e.g. : BTCUSDT,ETHUSDT")
                 .env("PAIRS")
-                .default_value("BTCUSDT")
+                .default_value("BTCUSDT"),
         )
         .arg(
             Arg::new("interval")
@@ -52,7 +51,7 @@ async fn main() -> Result<(), Error> {
                 .value_name("INTERVAL")
                 .help("KLine interval, e.g. : 15m")
                 .env("INTERVAL")
-                .default_value("1h")
+                .default_value("1h"),
         )
         .arg(
             Arg::new("db_url")
@@ -60,7 +59,7 @@ async fn main() -> Result<(), Error> {
                 .long("db-url")
                 .value_name("URL")
                 .env("DB_URL")
-                .help("TimescaleDb URL e.g.: postgres://postgres:pass@localhost/crypto")
+                .help("TimescaleDb URL e.g.: postgres://postgres:pass@localhost/crypto"),
         )
         .get_matches();
     log::info!("Starting Crypto importer");
@@ -89,7 +88,7 @@ async fn main() -> Result<(), Error> {
     let limiter = Arc::new(Mutex::new(boxed_limiter));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let (tx_close, _) = broadcast::channel(2);
+    let (tx_close, _rx_close) = broadcast::channel(2);
     let (tx_wait_exit, mut rx_wait_exit) = tokio::sync::mpsc::channel(1);
 
     for pair in config.pairs {
@@ -113,16 +112,16 @@ async fn main() -> Result<(), Error> {
     tokio::spawn(async move { start_saver_loop(boxed_db_saver, &mut rx, int_exit).await });
 
     tokio::spawn(async move {
-        match signal::ctrl_c().await {
-            Ok(()) => {
-                log::debug!("Exit event");
-            }
-            Err(err) => {
-                log::error!("Unable to listen for shutdown signal: {}", err);
-            }
+        let mut int_stream = signal(SignalKind::interrupt()).unwrap();
+        let mut term_stream = signal(SignalKind::terminate()).unwrap();
+        tokio::select! {
+            _ = int_stream.recv() => log::debug!("Exit event"),
+            _ = term_stream.recv() => log::debug!("Exit event"),
         }
         log::debug!("sending exit event");
-        tx_close.send(0).unwrap();
+        if let Err(e) = tx_close.send(0) {
+            log::error!("sending close event: {e}");
+        }
     });
 
     drop(tx_wait_exit);
