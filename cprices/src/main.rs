@@ -4,12 +4,14 @@ mod postgresql;
 
 use clap::App;
 use clap::Arg;
+use cprices::data::KLine;
 use cprices::data::Limiter;
-use cprices::run;
 use cprices::WorkingData;
+use cprices::{get_last_time, run, saver_start};
 use reqwest::Error;
 use std::process;
 use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
 
 use binance::Binance;
@@ -18,6 +20,7 @@ use postgresql::PostgresClient;
 
 use crate::limiter::RateLimiter;
 use crate::postgresql::PostgresClientRetryable;
+use cprices::data::DBSaver;
 use futures::future::join_all;
 
 #[tokio::main]
@@ -61,35 +64,49 @@ async fn main() -> Result<(), Error> {
     log::info!("Pair     {}", config.pairs.join(","));
     log::info!("Interval {}", config.interval);
 
+    let db_saver = PostgresClient::new(&config.db_url).unwrap_or_else(|err| {
+        log::error!("postgres client init: {err}");
+        process::exit(1)
+    });
+    let db_saver = PostgresClientRetryable::new(db_saver);
+    let boxed_db_saver: Box<dyn DBSaver> = Box::new(db_saver);
+    log::info!("Test Postgres is live ...");
+    boxed_db_saver.live().await.unwrap();
+    log::info!("Postgresql OK");
+
     let mut imports = Vec::new();
     let limiter = RateLimiter::new().unwrap();
     let boxed_limiter: Box<dyn Limiter> = Box::new(limiter);
     let limiter = Arc::new(Mutex::new(boxed_limiter));
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+
     for pair in config.pairs {
         let loader = Binance::new().unwrap();
-        let db_saver = PostgresClient::new(&config.db_url).unwrap_or_else(|err| {
-            log::error!("postgres client init: {err}");
-            process::exit(1)
-        });
-        let db_saver = PostgresClientRetryable::new(db_saver);
+
         let interval = config.interval.clone();
         let int_limiter = limiter.clone();
+        let int_tx = tx.clone();
+        let start_from = get_last_time(&boxed_db_saver, &pair).await.unwrap();
         let w_data = WorkingData {
             loader: Box::new(loader),
             pair,
             interval,
-            saver: Box::new(db_saver),
+            start_from,
+            sender: int_tx,
             limiter: int_limiter,
         };
 
         imports.push(run(w_data));
     }
+    tokio::spawn(async move { start_saver_loop(&config.db_url, &mut rx).await });
+    // imports.push(saver_start(boxed_db_saver, &mut rx));
+
     join_all(imports).await.iter().for_each(|err| {
         if let Err(e) = err {
             log::error!("Problem importing {e}");
         }
     });
-
 
     // if let Err(e) = run(&w_data).await {
     //         log::error!("Problem importing arguments: {e}");
@@ -106,5 +123,23 @@ async fn main() -> Result<(), Error> {
     //     }
     // }
     log::info!("Bye");
+    Ok(())
+}
+
+async fn start_saver_loop(db_url: &str, receiver: &mut Receiver<KLine>) -> Result<(), String> {
+    log::info!("start saver loop");
+    let db_saver = PostgresClient::new(db_url).unwrap_or_else(|err| {
+        log::error!("postgres client init: {err}");
+        process::exit(1)
+    });
+    let db_saver = PostgresClientRetryable::new(db_saver);
+    let boxed_db_saver: Box<dyn DBSaver + Send + Sync> = Box::new(db_saver);
+    log::info!("Test Postgres is live ...");
+    boxed_db_saver.live().await.unwrap();
+    log::info!("Postgresql OK");
+
+    saver_start(boxed_db_saver, receiver).await.unwrap();
+
+    log::info!("exit loop");
     Ok(())
 }

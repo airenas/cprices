@@ -12,7 +12,7 @@ pub struct RateLimiter {
 impl RateLimiter {
     pub fn new() -> Result<RateLimiter, Box<dyn Error>> {
         let governor = governor::RateLimiter::direct(
-            governor::Quota::per_minute(NonZeroU32::new(20).expect("Governor rate is 0")));
+            governor::Quota::per_minute(NonZeroU32::new(60).expect("Governor rate is 0")));
         let jitter = governor::Jitter::new(Duration::ZERO, Duration::from_secs(3));
         Ok(RateLimiter {governor, jitter})
     }
