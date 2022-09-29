@@ -76,7 +76,7 @@ pub async fn run(w_data: WorkingData, close_sender: broadcast::Sender<i32>) -> R
             },
         }
         log::info!("after check");
-        let max_dur = chrono::Duration::seconds(5);
+        let max_dur = chrono::Duration::minutes(15);
         let mut td = last_time - (Utc::now() - dur);
         if td < chrono::Duration::zero() {
             last_time = import(&w_data, last_time).await?;
