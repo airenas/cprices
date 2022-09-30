@@ -6,6 +6,10 @@ run:
 	RUST_LOG=DEBUG cargo run --bin importer -- --db-url $(POSTGRESQL_URL) --pair $(pair)
 .PHONY: run
 ###############################################################################
+run/build: build/local
+	RUST_LOG=DEBUG target/release/importer --db-url $(POSTGRESQL_URL) --pair $(pair)
+.PHONY: run/build
+###############################################################################
 build/local: 
 	cargo build --release
 .PHONY: build/local

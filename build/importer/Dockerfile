@@ -12,7 +12,7 @@ WORKDIR /src/
 COPY cprices /src
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-      CARGO_PKG_VERSION=$BUILD_VERSION cargo build --release
+      CARGO_APP_VERSION=$BUILD_VERSION cargo build --release
 #########################################################################################
 FROM debian:buster-slim as runner
 
