@@ -24,7 +24,7 @@ use clap::Command;
 use cprices::data::DBSaver;
 use futures::future::join_all;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -88,7 +88,7 @@ async fn main() -> Result<(), Error> {
     let limiter = Arc::new(Mutex::new(boxed_limiter));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let (tx_close, _rx_close) = broadcast::channel(2);
+    let (tx_close, rx_close) = watch::channel(0);
     let (tx_wait_exit, mut rx_wait_exit) = tokio::sync::mpsc::channel(1);
 
     for pair in config.pairs {
@@ -106,7 +106,7 @@ async fn main() -> Result<(), Error> {
             limiter: int_limiter,
         };
 
-        imports.push(run(w_data, tx_close.clone()));
+        imports.push(run(w_data, rx_close.clone()));
     }
     let int_exit = tx_wait_exit.clone();
     tokio::spawn(async move { start_saver_loop(boxed_db_saver, &mut rx, int_exit).await });
@@ -119,9 +119,10 @@ async fn main() -> Result<(), Error> {
             _ = term_stream.recv() => log::debug!("Exit event"),
         }
         log::debug!("sending exit event");
-        if let Err(e) = tx_close.send(0) {
+        if let Err(e) = tx_close.send(1) {
             log::error!("sending close event: {e}");
         }
+        log::debug!("expected drop tx_close");
     });
 
     drop(tx_wait_exit);

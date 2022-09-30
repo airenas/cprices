@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use clap::ArgMatches;
 use data::{DBSaver, KLine, Limiter, Loader};
 use std::error::Error;
-use tokio::sync::broadcast;
+use tokio::sync::{watch};
 use tokio::sync::{
     mpsc::{Receiver, Sender},
     Mutex,
@@ -46,7 +46,7 @@ pub struct WorkingData {
     pub sender: Sender<KLine>,
 }
 
-pub async fn run(w_data: WorkingData, close_sender: broadcast::Sender<i32>) -> ResultM {
+pub async fn run(w_data: WorkingData, mut close_ch: watch::Receiver<i32>) -> ResultM {
     log::info!("Importing: {}, from {}", w_data.pair, w_data.start_from);
     log::info!("Test Binance is live");
     match w_data.loader.live().await {
@@ -64,16 +64,14 @@ pub async fn run(w_data: WorkingData, close_sender: broadcast::Sender<i32>) -> R
     )
     .map_err(|e| format!("duration parse: {}", e))?;
 
-    let mut close_ch = close_sender.subscribe();
     loop {
         log::info!("loop");
-        match close_ch.try_recv() {
-            Ok(_) => break,
-            Err(err) => match err {
-                broadcast::error::TryRecvError::Empty => {}
-                broadcast::error::TryRecvError::Closed => break,
-                broadcast::error::TryRecvError::Lagged(_) => break,
-            },
+        match close_ch.has_changed() {
+            Ok(_) => {}
+            Err(err) => {
+                log::debug!("got watcher err {}", err);
+                break;
+            }
         }
         log::info!("after check");
         let max_dur = chrono::Duration::minutes(15);
@@ -89,7 +87,11 @@ pub async fn run(w_data: WorkingData, close_sender: broadcast::Sender<i32>) -> R
             tokio::pin!(sleep);
             tokio::select! {
                 _ = &mut sleep => {},
-                _ = close_ch.recv() => { break; }
+                cr = close_ch.changed() => {
+                    if let Err(err) = cr {
+                        log::debug!("got watcher err {}", err);
+                        break;
+                } }
             }
         }
     }
