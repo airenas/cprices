@@ -115,8 +115,8 @@ async fn main() -> Result<(), Error> {
         let mut int_stream = signal(SignalKind::interrupt()).unwrap();
         let mut term_stream = signal(SignalKind::terminate()).unwrap();
         tokio::select! {
-            _ = int_stream.recv() => log::debug!("Exit event"),
-            _ = term_stream.recv() => log::debug!("Exit event"),
+            _ = int_stream.recv() => log::info!("Exit event int"),
+            _ = term_stream.recv() => log::info!("Exit event term"),
         }
         log::debug!("sending exit event");
         if let Err(e) = tx_close.send(1) {
