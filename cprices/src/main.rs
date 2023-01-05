@@ -6,7 +6,7 @@ use clap::Arg;
 use cprices::data::KLine;
 use cprices::data::Limiter;
 use cprices::WorkingData;
-use cprices::{get_last_time, run, saver_start};
+use cprices::{get_last_time, run_exit_indicator, saver_start};
 use reqwest::Error;
 use std::process;
 use std::sync::Arc;
@@ -90,6 +90,7 @@ async fn main() -> Result<(), Error> {
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     let (tx_close, rx_close) = watch::channel(0);
     let (tx_wait_exit, mut rx_wait_exit) = tokio::sync::mpsc::channel(1);
+    let (tx_exit_indicator, mut rx_exit_indicator) = tokio::sync::mpsc::unbounded_channel();
 
     for pair in config.pairs {
         let loader = Binance::new().unwrap();
@@ -106,7 +107,7 @@ async fn main() -> Result<(), Error> {
             limiter: int_limiter,
         };
 
-        imports.push(run(w_data, rx_close.clone()));
+        imports.push(run_exit_indicator(w_data, rx_close.clone(), tx_exit_indicator.clone()));
     }
     let int_exit = tx_wait_exit.clone();
     tokio::spawn(async move { start_saver_loop(boxed_db_saver, &mut rx, int_exit).await });
@@ -117,6 +118,7 @@ async fn main() -> Result<(), Error> {
         tokio::select! {
             _ = int_stream.recv() => log::info!("Exit event int"),
             _ = term_stream.recv() => log::info!("Exit event term"),
+            _ = rx_exit_indicator.recv() => log::info!("Exit event from some loader"),
         }
         log::debug!("sending exit event");
         if let Err(e) = tx_close.send(1) {

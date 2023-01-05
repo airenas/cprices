@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use clap::ArgMatches;
 use data::{DBSaver, KLine, Limiter, Loader};
 use std::error::Error;
-use tokio::sync::{watch};
+use tokio::sync::watch;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
     Mutex,
@@ -46,6 +46,22 @@ pub struct WorkingData {
     pub sender: Sender<KLine>,
 }
 
+pub async fn run_exit_indicator(w_data: WorkingData, close_ch: watch::Receiver<i32>, exit_ind: tokio::sync::mpsc::UnboundedSender<i32>) -> ResultM {
+    match run(w_data, close_ch).await {
+        Ok(_) => {
+            log::info!("exit run");
+        }
+        Err(err) => {
+            log::error!("{}", err);
+            log::info!("sending exit signal");
+            exit_ind.send(1)?;
+            log::info!("sent exit signal");
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
 pub async fn run(w_data: WorkingData, mut close_ch: watch::Receiver<i32>) -> ResultM {
     log::info!("Importing: {}, from {}", w_data.pair, w_data.start_from);
     log::info!("Test Binance is live");
@@ -54,7 +70,6 @@ pub async fn run(w_data: WorkingData, mut close_ch: watch::Receiver<i32>) -> Res
             log::info!("Binance OK");
         }
         Err(err) => {
-            log::error!("{}", err);
             return Err(err);
         }
     }
